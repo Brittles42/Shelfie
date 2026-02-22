@@ -38,6 +38,7 @@ class BookShelf {
     document.getElementById('scan-btn').addEventListener('click', () => this.openScanner());
     document.getElementById('close-scanner').addEventListener('click', () => this.closeScanner());
     document.getElementById('timeline-btn').addEventListener('click', () => this.showView('timeline-view'));
+    document.getElementById('share-btn')?.addEventListener('click', () => this.shareShelf());
     document.getElementById('close-timeline').addEventListener('click', () => this.showView('library-view'));
     document.getElementById('close-detail').addEventListener('click', () => this.showView('library-view'));
     document.getElementById('delete-book').addEventListener('click', () => this.deleteCurrentBook());
@@ -274,14 +275,19 @@ class BookShelf {
   async identifyBook() {
     const apiKey = this.getGeminiKey();
     if (!apiKey) {
-      console.log('No API key');
+      console.log('No API key found');
+      document.getElementById('scan-status').textContent = 'No API key!';
       return null;
     }
+    
+    console.log('API key found:', apiKey.substring(0, 10) + '...');
 
     try {
       const base64Data = this.capturedImage.split(',')[1];
+      console.log('Image size:', Math.round(base64Data.length / 1024), 'KB');
       
-      console.log('Calling Gemini...');
+      document.getElementById('scan-status').textContent = 'Asking Gemini...';
+      
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
@@ -291,7 +297,7 @@ class BookShelf {
             contents: [{
               parts: [
                 { 
-                  text: 'Look at this book cover. What is the title and author? Return ONLY a JSON object like {"title": "Book Title", "author": "Author Name"}. No markdown, no explanation, just the JSON.' 
+                  text: 'This is a photo of a book cover. Tell me the book title and author. Respond with ONLY valid JSON in this exact format: {"title": "The Book Title", "author": "Author Name"}. No other text.' 
                 },
                 { 
                   inline_data: { 
@@ -300,38 +306,58 @@ class BookShelf {
                   } 
                 }
               ]
-            }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 100
+            }
           })
         }
       );
       
-      const data = await response.json();
-      console.log('Gemini response:', data);
-      
-      if (data.error) {
-        console.error('Gemini API error:', data.error);
-        alert('Gemini API error: ' + data.error.message);
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('API request failed:', response.status, errText);
+        document.getElementById('scan-status').textContent = 'API error: ' + response.status;
         return null;
       }
       
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        const text = data.candidates[0].content.parts[0].text;
-        console.log('Gemini text:', text);
-        
-        // Try to parse JSON from response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
-        }
+      const data = await response.json();
+      console.log('Gemini response:', JSON.stringify(data, null, 2));
+      
+      if (data.error) {
+        console.error('Gemini error:', data.error);
+        document.getElementById('scan-status').textContent = 'Error: ' + data.error.message;
+        return null;
       }
+      
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        console.log('Gemini said:', text);
+        document.getElementById('scan-status').textContent = 'Parsing result...';
+        
+        // Clean up response - remove markdown code blocks if present
+        let cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        
+        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const result = JSON.parse(jsonMatch[0]);
+          console.log('Parsed:', result);
+          return result;
+        } else {
+          console.log('No JSON found in:', cleanText);
+        }
+      } else {
+        console.log('No text in response');
+      }
+      
       return null;
     } catch (e) {
-      console.error('Gemini error:', e);
+      console.error('identifyBook error:', e);
+      document.getElementById('scan-status').textContent = 'Error: ' + e.message;
       return null;
     }
   }
-
-  getGeminiKey() {
     // Check window first (injected by Vercel build)
     if (window.GEMINI_API_KEY) {
       return window.GEMINI_API_KEY;
@@ -540,6 +566,118 @@ class BookShelf {
     
     // Reset input so same file can be selected again
     event.target.value = '';
+  }
+
+  async shareShelf() {
+    if (this.books.length === 0) {
+      alert('Add some books first!');
+      return;
+    }
+    
+    this.showLoading('Creating shareable image...');
+    
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Size for social media (Instagram story friendly)
+      const width = 1080;
+      const padding = 60;
+      const bookHeight = 80;
+      const headerHeight = 200;
+      const height = Math.max(1920, headerHeight + (this.books.length * bookHeight) + padding * 2);
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Background gradient (fairy tale theme)
+      const gradient = ctx.createLinearGradient(0, 0, 0, height);
+      gradient.addColorStop(0, '#1a1a2e');
+      gradient.addColorStop(0.5, '#16213e');
+      gradient.addColorStop(1, '#0f3460');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Add some stars
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+      for (let i = 0; i < 50; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const size = Math.random() * 3 + 1;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Header
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold 72px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('📚 My Shelfie', width / 2, 100);
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.font = '32px system-ui, sans-serif';
+      ctx.fillText(`${this.books.length} book${this.books.length === 1 ? '' : 's'}`, width / 2, 150);
+      
+      // Books list
+      ctx.textAlign = 'left';
+      let y = headerHeight + padding;
+      
+      for (const book of this.books) {
+        // Book number bullet
+        const index = this.books.indexOf(book) + 1;
+        ctx.fillStyle = '#e94560';
+        ctx.font = 'bold 28px system-ui, sans-serif';
+        ctx.fillText(`${index}.`, padding, y);
+        
+        // Title
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 32px system-ui, sans-serif';
+        const title = book.title.length > 35 ? book.title.substring(0, 35) + '...' : book.title;
+        ctx.fillText(title, padding + 50, y);
+        
+        // Author
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.font = '24px system-ui, sans-serif';
+        const author = book.authors?.join(', ') || 'Unknown Author';
+        ctx.fillText(author, padding + 50, y + 35);
+        
+        y += bookHeight;
+      }
+      
+      // Footer
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.font = '24px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Made with Shelfie 📖✨', width / 2, height - 40);
+      
+      // Convert to blob
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      
+      this.hideLoading();
+      
+      // Try native share first, fallback to download
+      if (navigator.share && navigator.canShare?.({ files: [new File([blob], 'my-shelfie.png', { type: 'image/png' })] })) {
+        const file = new File([blob], 'my-shelfie.png', { type: 'image/png' });
+        await navigator.share({
+          title: 'My Shelfie',
+          text: `Check out my bookshelf! ${this.books.length} books 📚`,
+          files: [file]
+        });
+      } else {
+        // Download fallback
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'my-shelfie.png';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      console.error('Share error:', e);
+      this.hideLoading();
+      alert('Failed to create share image');
+    }
   }
   showLoading(text = 'Loading...') {
     document.getElementById('loading-text').textContent = text;
