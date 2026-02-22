@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Shelfie - Scan Your Books</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Main Library View -->
+    <div id="library-view" class="view active">
+      <header>
+        <h1>📚 Shelfie</h1>
+        <button id="timeline-btn" class="icon-btn" title="Timeline">📅</button>
+      </header>
+      
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">📖</div>
+        <p>No books yet</p>
+        <p class="subtle">Tap the scan button to add your first book</p>
+      </div>
+      
+      <div id="book-grid" class="book-grid"></div>
+      
+      <button id="scan-btn" class="fab" title="Scan a book">
+        <span class="scan-icon">📷</span>
+      </button>
+    </div>
+
+    <!-- Scanner View -->
+    <div id="scanner-view" class="view">
+      <header>
+        <button id="close-scanner" class="icon-btn">✕</button>
+        <span>Point at cover or barcode</span>
+        <button id="toggle-mode" class="icon-btn" title="Switch mode">🔄</button>
+      </header>
+      
+      <div id="scanner-container">
+        <video id="camera" autoplay playsinline></video>
+        <canvas id="scan-canvas"></canvas>
+        <div id="scan-overlay">
+          <div class="scan-frame"></div>
+          <p id="scan-status">Scanning...</p>
+        </div>
+      </div>
+      
+      <div id="scan-modes">
+        <button class="mode-btn active" data-mode="auto">Auto</button>
+        <button class="mode-btn" data-mode="barcode">Barcode</button>
+        <button class="mode-btn" data-mode="cover">Cover</button>
+      </div>
+    </div>
+
+    <!-- Book Detail View -->
+    <div id="detail-view" class="view">
+      <header>
+        <button id="close-detail" class="icon-btn">←</button>
+        <span>Book Details</span>
+        <button id="delete-book" class="icon-btn" title="Delete">🗑️</button>
+      </header>
+      
+      <div id="book-detail"></div>
+    </div>
+
+    <!-- Timeline View -->
+    <div id="timeline-view" class="view">
+      <header>
+        <button id="close-timeline" class="icon-btn">←</button>
+        <span>Your Reading Timeline</span>
+      </header>
+      
+      <div id="timeline-container"></div>
+    </div>
+
+    <!-- Book Confirm Modal -->
+    <div id="confirm-modal" class="modal">
+      <div class="modal-content">
+        <div id="confirm-book-info"></div>
+        <div class="modal-actions">
+          <button id="confirm-cancel" class="btn secondary">Cancel</button>
+          <button id="confirm-add" class="btn primary">Add to Shelf</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading-overlay">
+      <div class="spinner"></div>
+      <p id="loading-text">Looking up book...</p>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/@AcNeidert/quagga2@1.8.4/dist/quagga.min.js"></script>
+  <script src="https://unpkg.com/tesseract.js@4/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
