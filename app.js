@@ -284,69 +284,6 @@ class BookShelf {
     const apiKey = this.getGeminiKey();
     if (!apiKey) return null;
 
-    // Step 1: Try basic OCR with canvas (free, fast)
-    const ocrText = await this.basicOCR();
-    
-    if (ocrText && ocrText.length > 5) {
-      // Step 2: Send TEXT to Gemini (super cheap)
-      console.log('Trying text-based identification...');
-      const result = await this.geminiParseText(apiKey, ocrText);
-      if (result && result.title) {
-        console.log('Text-based ID success:', result);
-        return result;
-      }
-    }
-    
-    // Step 3: Fallback - send actual IMAGE to Gemini
-    console.log('Falling back to image-based identification...');
-    document.getElementById('loading-text').textContent = 'AI analyzing cover...';
-    return await this.geminiParseImage(apiKey);
-  }
-
-  async basicOCR() {
-    // Use browser's built-in OCR if available (Chrome 90+)
-    if ('createImageBitmap' in window && 'OffscreenCanvas' in window) {
-      try {
-        // Try to use shape detection API for text
-        if ('TextDetector' in window) {
-          const detector = new TextDetector();
-          const canvas = document.getElementById('scan-canvas');
-          const texts = await detector.detect(canvas);
-          if (texts.length > 0) {
-            return texts.map(t => t.rawValue).join(' ');
-          }
-        }
-      } catch (e) {
-        console.log('TextDetector not available');
-      }
-    }
-    return null;
-  }
-
-  async geminiParseText(apiKey, ocrText) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `This text was extracted from a book cover. Identify the book title and author. Return ONLY valid JSON: {"title": "...", "author": "..."}. If unclear, guess the most likely book. Text: ${ocrText}`
-              }]
-            }]
-          })
-        }
-      );
-      return this.parseGeminiResponse(await response.json());
-    } catch (e) {
-      console.error('Gemini text parse error:', e);
-      return null;
-    }
-  }
-
-  async geminiParseImage(apiKey) {
     try {
       const base64Data = this.capturedImage.split(',')[1];
       
@@ -358,33 +295,28 @@ class BookShelf {
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: 'What book is this? Return ONLY valid JSON: {"title": "...", "author": "..."}' },
+                { text: 'What book is this? Return ONLY valid JSON: {"title": "...", "author": "..."}. No markdown, no explanation.' },
                 { inline_data: { mime_type: 'image/jpeg', data: base64Data } }
               ]
             }]
           })
         }
       );
-      return this.parseGeminiResponse(await response.json());
-    } catch (e) {
-      console.error('Gemini image parse error:', e);
-      return null;
-    }
-  }
-
-  parseGeminiResponse(data) {
-    try {
-      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      
+      const data = await response.json();
+      
+      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
         const text = data.candidates[0].content.parts[0].text;
         const jsonMatch = text.match(/\{[^}]+\}/s);
         if (jsonMatch) {
           return JSON.parse(jsonMatch[0]);
         }
       }
+      return null;
     } catch (e) {
-      console.error('Parse error:', e);
+      console.error('Gemini error:', e);
+      return null;
     }
-    return null;
   }
 
   getGeminiKey() {
