@@ -265,6 +265,37 @@ header span {
   border-color: var(--accent);
 }
 
+.search-results {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.search-result {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-result:hover {
+  background: var(--bg-surface);
+}
+
+.search-result strong {
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.search-result span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 /* Book Detail */
 #book-detail {
   flex: 1;

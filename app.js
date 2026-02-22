@@ -253,35 +253,178 @@ class BookShelf {
     ctx.drawImage(video, 0, 0);
     
     // Save as thumbnail (compressed)
-    this.capturedImage = canvas.toDataURL('image/jpeg', 0.7);
+    this.capturedImage = canvas.toDataURL('image/jpeg', 0.8);
     
     // Haptic feedback
     if (navigator.vibrate) navigator.vibrate(50);
     
-    document.getElementById('scan-status').textContent = 'Processing...';
-    this.showLoading('Reading cover text...');
-
+    document.getElementById('scan-status').textContent = 'Identifying book...';
+    this.showLoading('Reading cover...');
+    
     try {
-      // OCR the cover
-      const result = await Tesseract.recognize(canvas, 'eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            document.getElementById('loading-text').textContent = 
-              `Reading... ${Math.round(m.progress * 100)}%`;
+      const bookInfo = await this.identifyBook();
+      
+      if (bookInfo && bookInfo.title) {
+        // Got it! Search for full metadata
+        document.getElementById('loading-text').textContent = 'Finding details...';
+        await this.searchAndConfirm(bookInfo);
+      } else {
+        // Couldn't identify - manual fallback
+        this.hideLoading();
+        this.showManualEntry();
+      }
+    } catch (e) {
+      console.error('Identification error:', e);
+      this.hideLoading();
+      this.showManualEntry();
+    }
+  }
+
+  async identifyBook() {
+    const apiKey = this.getGeminiKey();
+    if (!apiKey) return null;
+
+    // Step 1: Try basic OCR with canvas (free, fast)
+    const ocrText = await this.basicOCR();
+    
+    if (ocrText && ocrText.length > 5) {
+      // Step 2: Send TEXT to Gemini (super cheap)
+      console.log('Trying text-based identification...');
+      const result = await this.geminiParseText(apiKey, ocrText);
+      if (result && result.title) {
+        console.log('Text-based ID success:', result);
+        return result;
+      }
+    }
+    
+    // Step 3: Fallback - send actual IMAGE to Gemini
+    console.log('Falling back to image-based identification...');
+    document.getElementById('loading-text').textContent = 'AI analyzing cover...';
+    return await this.geminiParseImage(apiKey);
+  }
+
+  async basicOCR() {
+    // Use browser's built-in OCR if available (Chrome 90+)
+    if ('createImageBitmap' in window && 'OffscreenCanvas' in window) {
+      try {
+        // Try to use shape detection API for text
+        if ('TextDetector' in window) {
+          const detector = new TextDetector();
+          const canvas = document.getElementById('scan-canvas');
+          const texts = await detector.detect(canvas);
+          if (texts.length > 0) {
+            return texts.map(t => t.rawValue).join(' ');
           }
         }
-      });
+      } catch (e) {
+        console.log('TextDetector not available');
+      }
+    }
+    return null;
+  }
 
-      const text = result.data.text;
-      console.log('OCR Result:', text);
-      
-      // Search for the book
-      await this.searchBookByText(text);
+  async geminiParseText(apiKey, ocrText) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `This text was extracted from a book cover. Identify the book title and author. Return ONLY valid JSON: {"title": "...", "author": "..."}. If unclear, guess the most likely book. Text: ${ocrText}`
+              }]
+            }]
+          })
+        }
+      );
+      return this.parseGeminiResponse(await response.json());
     } catch (e) {
-      console.error('OCR error:', e);
+      console.error('Gemini text parse error:', e);
+      return null;
+    }
+  }
+
+  async geminiParseImage(apiKey) {
+    try {
+      const base64Data = this.capturedImage.split(',')[1];
+      
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: 'What book is this? Return ONLY valid JSON: {"title": "...", "author": "..."}' },
+                { inline_data: { mime_type: 'image/jpeg', data: base64Data } }
+              ]
+            }]
+          })
+        }
+      );
+      return this.parseGeminiResponse(await response.json());
+    } catch (e) {
+      console.error('Gemini image parse error:', e);
+      return null;
+    }
+  }
+
+  parseGeminiResponse(data) {
+    try {
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        const text = data.candidates[0].content.parts[0].text;
+        const jsonMatch = text.match(/\{[^}]+\}/s);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+      }
+    } catch (e) {
+      console.error('Parse error:', e);
+    }
+    return null;
+  }
+
+  getGeminiKey() {
+    let key = localStorage.getItem('shelfie_gemini_key');
+    if (!key) {
+      key = prompt('Enter your Gemini API key (free at aistudio.google.com):');
+      if (key) {
+        localStorage.setItem('shelfie_gemini_key', key);
+      }
+    }
+    return key;
+  }
+
+  async searchAndConfirm(bookInfo) {
+    try {
+      const query = `${bookInfo.title} ${bookInfo.author || ''}`;
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=1`
+      );
+      const data = await response.json();
+
+      let book;
+      if (data.items && data.items.length > 0) {
+        book = this.parseGoogleBook(data.items[0]);
+      } else {
+        book = { title: bookInfo.title, authors: bookInfo.author ? [bookInfo.author] : [] };
+      }
+      
+      book.cover = this.capturedImage;
       this.hideLoading();
-      // Even if OCR fails, let user add with just the photo
-      this.showManualEntry();
+      this.showConfirmation(book);
+    } catch (e) {
+      console.error('Search error:', e);
+      this.hideLoading();
+      const book = {
+        title: bookInfo.title,
+        authors: bookInfo.author ? [bookInfo.author] : [],
+        cover: this.capturedImage
+      };
+      this.showConfirmation(book);
     }
   }
 
@@ -409,20 +552,29 @@ class BookShelf {
     document.getElementById('confirm-modal').classList.remove('active');
     this.pendingBook = null;
     this.capturedImage = null;
+    this.searchResults = null;
+    // Go back to scanner or library
+    if (this.stream) {
+      document.getElementById('scan-status').textContent = 'Point at book cover';
+    }
   }
 
   confirmAddBook() {
-    if (!this.pendingBook) return;
-    
-    // Check for editable fields
-    const titleInput = document.getElementById('edit-title');
-    const authorInput = document.getElementById('edit-author');
-    
-    if (titleInput) {
-      this.pendingBook.title = titleInput.value || 'Untitled';
-    }
-    if (authorInput) {
-      this.pendingBook.authors = authorInput.value ? [authorInput.value] : [];
+    // If no book selected yet, use the typed title
+    if (!this.pendingBook) {
+      const titleInput = document.getElementById('quick-title');
+      const title = titleInput?.value?.trim();
+      
+      if (!title) {
+        alert('Please enter a book title or select from search results');
+        return;
+      }
+      
+      this.pendingBook = {
+        title: title,
+        authors: [],
+        cover: this.capturedImage
+      };
     }
     
     this.pendingBook.addedAt = new Date().toISOString();
@@ -435,7 +587,8 @@ class BookShelf {
     document.getElementById('confirm-modal').classList.remove('active');
     this.pendingBook = null;
     this.capturedImage = null;
-    this.closeScanner();
+    this.searchResults = null;
+    this.showView('library-view');
     
     // Celebration feedback
     if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
