@@ -237,28 +237,31 @@ header span {
   font-size: 0.9rem;
 }
 
-#scan-modes {
-  display: flex;
-  gap: 10px;
+#scan-hint {
   padding: 16px;
-  justify-content: center;
+  text-align: center;
   background: var(--bg-card);
 }
 
-.mode-btn {
-  padding: 10px 20px;
-  border: 2px solid var(--text-muted);
-  background: transparent;
+#scan-hint p {
   color: var(--text-muted);
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s;
+  font-size: 1rem;
 }
 
-.mode-btn.active {
+#confirm-book-info input {
+  width: 100%;
+  padding: 12px;
+  margin: 8px 0;
+  border: 2px solid var(--bg-surface);
+  border-radius: 8px;
+  background: var(--bg-dark);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+#confirm-book-info input:focus {
+  outline: none;
   border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(233, 69, 96, 0.1);
 }
 
 /* Book Detail */

@@ -5,10 +5,8 @@ class BookShelf {
     this.books = [];
     this.currentBook = null;
     this.pendingBook = null;
-    this.scanMode = 'auto';
     this.stream = null;
-    this.scanning = false;
-    this.ocrWorker = null;
+    this.capturedImage = null;
     
     this.init();
   }
@@ -45,25 +43,12 @@ class BookShelf {
     document.getElementById('close-detail').addEventListener('click', () => this.showView('library-view'));
     document.getElementById('delete-book').addEventListener('click', () => this.deleteCurrentBook());
 
-    // Scan modes
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        this.scanMode = e.target.dataset.mode;
-      });
-    });
+    // Capture on tap
+    document.getElementById('scanner-container').addEventListener('click', () => this.captureAndProcess());
 
     // Confirmation modal
     document.getElementById('confirm-add').addEventListener('click', () => this.confirmAddBook());
     document.getElementById('confirm-cancel').addEventListener('click', () => this.hideModal());
-
-    // Manual capture for cover mode
-    document.getElementById('scanner-container').addEventListener('click', () => {
-      if (this.scanMode === 'cover') {
-        this.captureAndOCR();
-      }
-    });
   }
 
   // Views
@@ -132,12 +117,6 @@ class BookShelf {
           <div class="detail-meta-row">
             <span class="detail-meta-label">Pages</span>
             <span>${book.pageCount}</span>
-          </div>
-        ` : ''}
-        ${book.isbn ? `
-          <div class="detail-meta-row">
-            <span class="detail-meta-label">ISBN</span>
-            <span>${book.isbn}</span>
           </div>
         ` : ''}
         <div class="detail-meta-row">
@@ -226,15 +205,15 @@ class BookShelf {
   async openScanner() {
     this.showView('scanner-view');
     await this.startCamera();
-    this.startScanning();
   }
 
   async startCamera() {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       document.getElementById('camera').srcObject = this.stream;
+      document.getElementById('scan-status').textContent = 'Point at book cover';
     } catch (e) {
       console.error('Camera error:', e);
       alert('Could not access camera. Please grant camera permission.');
@@ -250,91 +229,31 @@ class BookShelf {
   }
 
   closeScanner() {
-    this.stopScanning();
     this.stopCamera();
     this.showView('library-view');
   }
 
-  startScanning() {
-    this.scanning = true;
-    this.scanLoop();
-  }
-
-  stopScanning() {
-    this.scanning = false;
-  }
-
-  async scanLoop() {
-    if (!this.scanning) return;
-
-    const video = document.getElementById('camera');
-    const canvas = document.getElementById('scan-canvas');
-    const ctx = canvas.getContext('2d');
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-
-      if (this.scanMode === 'auto' || this.scanMode === 'barcode') {
-        const barcode = await this.detectBarcode(canvas);
-        if (barcode) {
-          this.onBarcodeDetected(barcode);
-          return;
-        }
-      }
-    }
-
-    requestAnimationFrame(() => this.scanLoop());
-  }
-
-  async detectBarcode(canvas) {
-    return new Promise((resolve) => {
-      // Use Quagga for barcode detection
-      Quagga.decodeSingle({
-        src: canvas.toDataURL(),
-        numOfWorkers: 0,
-        decoder: {
-          readers: ['ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader']
-        },
-        locate: true
-      }, (result) => {
-        if (result && result.codeResult) {
-          resolve(result.codeResult.code);
-        } else {
-          resolve(null);
-        }
-      });
-    });
-  }
-
-  async onBarcodeDetected(isbn) {
-    this.stopScanning();
-    document.getElementById('scan-status').textContent = `Found: ${isbn}`;
-    
-    // Haptic feedback
-    if (navigator.vibrate) navigator.vibrate(100);
-    
-    await this.lookupBook(isbn);
-  }
-
-  async captureAndOCR() {
-    if (!this.scanning) return;
-    this.stopScanning();
-    
-    document.getElementById('scan-status').textContent = 'Reading cover...';
-    this.showLoading('Extracting text from cover...');
-
+  async captureAndProcess() {
     const video = document.getElementById('camera');
     const canvas = document.getElementById('scan-canvas');
     const ctx = canvas.getContext('2d');
     
+    // Capture the frame
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
+    
+    // Save as thumbnail (compressed)
+    this.capturedImage = canvas.toDataURL('image/jpeg', 0.7);
+    
+    // Haptic feedback
+    if (navigator.vibrate) navigator.vibrate(50);
+    
+    document.getElementById('scan-status').textContent = 'Processing...';
+    this.showLoading('Reading cover text...');
 
     try {
-      // Initialize Tesseract worker if needed
+      // OCR the cover
       const result = await Tesseract.recognize(canvas, 'eng', {
         logger: m => {
           if (m.status === 'recognizing text') {
@@ -347,30 +266,34 @@ class BookShelf {
       const text = result.data.text;
       console.log('OCR Result:', text);
       
-      // Try to extract title and author
+      // Search for the book
       await this.searchBookByText(text);
     } catch (e) {
       console.error('OCR error:', e);
       this.hideLoading();
-      alert('Could not read the cover. Try the barcode instead.');
-      this.startScanning();
+      // Even if OCR fails, let user add with just the photo
+      this.showManualEntry();
     }
   }
 
   async searchBookByText(text) {
-    // Clean up OCR text and search
-    const cleanText = text
+    // Clean up OCR text - get the most prominent lines (likely title/author)
+    const lines = text
       .split('\n')
-      .filter(line => line.trim().length > 3)
-      .slice(0, 3)
-      .join(' ')
+      .map(l => l.trim())
+      .filter(line => line.length > 2 && !/^[\d\W]+$/.test(line));
+    
+    // Take first few meaningful lines as search query
+    const searchQuery = lines.slice(0, 4).join(' ')
       .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
 
-    if (!cleanText) {
+    console.log('Search query:', searchQuery);
+
+    if (!searchQuery || searchQuery.length < 3) {
       this.hideLoading();
-      alert('Could not extract text. Try again or use barcode.');
-      this.startScanning();
+      this.showManualEntry();
       return;
     }
 
@@ -378,83 +301,24 @@ class BookShelf {
 
     try {
       const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(cleanText)}&maxResults=1`
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=5`
       );
       const data = await response.json();
 
       if (data.items && data.items.length > 0) {
+        // Show best match, use our captured image as cover
         const book = this.parseGoogleBook(data.items[0]);
+        book.cover = this.capturedImage; // Use photo as thumbnail!
         this.hideLoading();
         this.showConfirmation(book);
       } else {
         this.hideLoading();
-        alert('No book found. Try barcode scanning.');
-        this.startScanning();
+        this.showManualEntry();
       }
     } catch (e) {
       console.error('Search error:', e);
       this.hideLoading();
-      alert('Search failed. Check your connection.');
-      this.startScanning();
-    }
-  }
-
-  async lookupBook(isbn) {
-    this.showLoading('Looking up book...');
-
-    try {
-      // Try Google Books API
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`
-      );
-      const data = await response.json();
-
-      if (data.items && data.items.length > 0) {
-        const book = this.parseGoogleBook(data.items[0]);
-        book.isbn = isbn;
-        this.hideLoading();
-        this.showConfirmation(book);
-      } else {
-        // Try Open Library as fallback
-        await this.lookupOpenLibrary(isbn);
-      }
-    } catch (e) {
-      console.error('Lookup error:', e);
-      this.hideLoading();
-      alert('Could not look up book. Check your connection.');
-      this.startScanning();
-    }
-  }
-
-  async lookupOpenLibrary(isbn) {
-    try {
-      const response = await fetch(
-        `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=data&format=json`
-      );
-      const data = await response.json();
-      const key = `ISBN:${isbn}`;
-
-      if (data[key]) {
-        const item = data[key];
-        const book = {
-          title: item.title,
-          authors: item.authors?.map(a => a.name) || [],
-          cover: item.cover?.medium || item.cover?.small || null,
-          publishedDate: item.publish_date,
-          pageCount: item.number_of_pages,
-          isbn: isbn
-        };
-        this.hideLoading();
-        this.showConfirmation(book);
-      } else {
-        this.hideLoading();
-        alert(`No book found for ISBN: ${isbn}`);
-        this.startScanning();
-      }
-    } catch (e) {
-      this.hideLoading();
-      alert('Could not look up book.');
-      this.startScanning();
+      this.showManualEntry();
     }
   }
 
@@ -463,8 +327,6 @@ class BookShelf {
     return {
       title: info.title,
       authors: info.authors || [],
-      cover: info.imageLinks?.thumbnail?.replace('http:', 'https:') || 
-             info.imageLinks?.smallThumbnail?.replace('http:', 'https:') || null,
       publishedDate: info.publishedDate,
       pageCount: info.pageCount,
       description: info.description,
@@ -472,14 +334,29 @@ class BookShelf {
     };
   }
 
+  showManualEntry() {
+    // Fallback - add book with just the photo
+    const book = {
+      title: 'Unknown Book',
+      authors: [],
+      cover: this.capturedImage
+    };
+    this.showConfirmation(book, true);
+  }
+
   // Confirmation
-  showConfirmation(book) {
+  showConfirmation(book, editable = false) {
     this.pendingBook = book;
     
     document.getElementById('confirm-book-info').innerHTML = `
-      ${book.cover ? `<img src="${book.cover}" alt="${book.title}">` : ''}
-      <h3>${book.title}</h3>
-      <p>${book.authors?.join(', ') || 'Unknown Author'}</p>
+      <img src="${book.cover || ''}" alt="Cover">
+      ${editable ? `
+        <input type="text" id="edit-title" value="${book.title}" placeholder="Book title">
+        <input type="text" id="edit-author" value="${book.authors?.join(', ') || ''}" placeholder="Author">
+      ` : `
+        <h3>${book.title}</h3>
+        <p>${book.authors?.join(', ') || 'Unknown Author'}</p>
+      `}
     `;
     
     document.getElementById('confirm-modal').classList.add('active');
@@ -488,11 +365,22 @@ class BookShelf {
   hideModal() {
     document.getElementById('confirm-modal').classList.remove('active');
     this.pendingBook = null;
-    this.startScanning();
+    this.capturedImage = null;
   }
 
   confirmAddBook() {
     if (!this.pendingBook) return;
+    
+    // Check for editable fields
+    const titleInput = document.getElementById('edit-title');
+    const authorInput = document.getElementById('edit-author');
+    
+    if (titleInput) {
+      this.pendingBook.title = titleInput.value || 'Untitled';
+    }
+    if (authorInput) {
+      this.pendingBook.authors = authorInput.value ? [authorInput.value] : [];
+    }
     
     this.pendingBook.addedAt = new Date().toISOString();
     this.pendingBook.id = Date.now().toString();
@@ -503,6 +391,7 @@ class BookShelf {
     
     document.getElementById('confirm-modal').classList.remove('active');
     this.pendingBook = null;
+    this.capturedImage = null;
     this.closeScanner();
     
     // Celebration feedback
