@@ -358,6 +358,7 @@ class BookShelf {
       return null;
     }
   }
+  getGeminiKey() {
     // Check window first (injected by Vercel build)
     if (window.GEMINI_API_KEY) {
       return window.GEMINI_API_KEY;

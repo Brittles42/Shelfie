@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shelfie-v1';
+const CACHE_NAME = 'shelfie-v2';
 const ASSETS = [
   '/',
   '/index.html',
