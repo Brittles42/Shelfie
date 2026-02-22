@@ -6,55 +6,70 @@
   <meta name="theme-color" content="#1a1a2e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Shelfie - Scan Your Books</title>
+  <title>Shelfie</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="app">
-    <!-- Main Library View -->
+    
+    <!-- Library View (Home) -->
     <div id="library-view" class="view active">
       <header>
         <h1>📚 Shelfie</h1>
-        <button id="share-btn" class="icon-btn" title="Share">📤</button>
-        <button id="timeline-btn" class="icon-btn" title="Timeline">📅</button>
+        <div>
+          <button id="share-btn" class="icon-btn" title="Share">📤</button>
+          <button id="timeline-btn" class="icon-btn" title="Timeline">📅</button>
+        </div>
       </header>
-      
-      <div id="empty-state" class="empty-state">
-        <div class="empty-icon">📖</div>
-        <p>No books yet</p>
-        <p class="subtle">Tap the scan button to add your first book</p>
-      </div>
       
       <div id="book-grid" class="book-grid"></div>
       
-      <button id="scan-btn" class="fab" title="Scan a book">
-        <span class="scan-icon">📷</span>
-      </button>
+      <div id="empty-state" class="empty-state">
+        <p>Your shelf is empty</p>
+        <p class="subtle">Tap + to add your first book</p>
+      </div>
+      
+      <button id="add-btn" class="fab">+</button>
     </div>
 
-    <!-- Scanner View -->
-    <div id="scanner-view" class="view">
+    <!-- Add Book View -->
+    <div id="add-view" class="view">
       <header>
-        <button id="close-scanner" class="icon-btn">✕</button>
-        <span>Point at cover or barcode</span>
-<span></span>
+        <button id="close-add" class="icon-btn">✕</button>
+        <span>Add Book</span>
+        <span></span>
       </header>
       
-      <div id="scanner-container">
-        <video id="camera" autoplay playsinline></video>
-        <canvas id="scan-canvas"></canvas>
-        <div id="scan-overlay">
-          <div class="scan-frame"></div>
-          <p id="scan-status">Scanning...</p>
-        </div>
+      <div class="add-options">
+        <label class="add-option">
+          <input type="file" id="camera-input" accept="image/*" capture="environment">
+          <div class="add-option-icon">📷</div>
+          <div class="add-option-text">Take Photo</div>
+        </label>
+        
+        <label class="add-option">
+          <input type="file" id="library-input" accept="image/*">
+          <div class="add-option-icon">🖼️</div>
+          <div class="add-option-text">Photo Library</div>
+        </label>
+        
+        <button id="search-option" class="add-option">
+          <div class="add-option-icon">🔍</div>
+          <div class="add-option-text">Search by Title</div>
+        </button>
       </div>
-      
-      <div id="scan-controls">
-        <button id="capture-btn" class="capture-btn">📸</button>
-        <div class="scan-options"><label id="upload-btn" class="option-btn">🖼️ Library<input type="file" id="photo-input" accept="image/*" style="display:none"></label><button id="manual-search-btn" class="option-btn">🔍 Title</button></div>
-      </div>
+    </div>
+
+    <!-- Timeline View -->
+    <div id="timeline-view" class="view">
+      <header>
+        <button id="close-timeline" class="icon-btn">←</button>
+        <span>Timeline</span>
+        <span></span>
+      </header>
+      <div id="timeline-container"></div>
     </div>
 
     <!-- Book Detail View -->
@@ -62,23 +77,12 @@
       <header>
         <button id="close-detail" class="icon-btn">←</button>
         <span>Book Details</span>
-        <button id="delete-book" class="icon-btn" title="Delete">🗑️</button>
+        <button id="delete-book" class="icon-btn">🗑️</button>
       </header>
-      
       <div id="book-detail"></div>
     </div>
 
-    <!-- Timeline View -->
-    <div id="timeline-view" class="view">
-      <header>
-        <button id="close-timeline" class="icon-btn">←</button>
-        <span>Your Reading Timeline</span>
-      </header>
-      
-      <div id="timeline-container"></div>
-    </div>
-
-    <!-- Book Confirm Modal -->
+    <!-- Confirm Modal -->
     <div id="confirm-modal" class="modal">
       <div class="modal-content">
         <div id="confirm-book-info"></div>
@@ -89,21 +93,12 @@
       </div>
     </div>
 
-    <!-- Install Prompt -->
-    <div id="install-prompt" class="install-prompt hidden">
-      <div class="install-prompt-text">
-        <h4>✨ Install Shelfie</h4>
-        <p>Add to home screen for the best experience</p>
-      </div>
-      <button id="install-dismiss" class="btn dismiss">Later</button>
-      <button id="install-btn" class="btn primary">Install</button>
-    </div>
-
     <!-- Loading Overlay -->
     <div id="loading" class="loading-overlay">
       <div class="spinner"></div>
-      <p id="loading-text">Looking up book...</p>
+      <p id="loading-text">Loading...</p>
     </div>
+
   </div>
 
   <script src="app.js"></script>
