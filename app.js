@@ -35,7 +35,6 @@ class BookShelf {
 
   // Event Binding
   bindEvents() {
-    // Navigation
     document.getElementById('scan-btn').addEventListener('click', () => this.openScanner());
     document.getElementById('close-scanner').addEventListener('click', () => this.closeScanner());
     document.getElementById('timeline-btn').addEventListener('click', () => this.showView('timeline-view'));
@@ -43,18 +42,20 @@ class BookShelf {
     document.getElementById('close-detail').addEventListener('click', () => this.showView('library-view'));
     document.getElementById('delete-book').addEventListener('click', () => this.deleteCurrentBook());
 
-    // Capture on tap
-    document.getElementById('scanner-container').addEventListener('click', () => this.captureAndProcess());
+    // Capture button - single tap
+    document.getElementById('capture-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.captureAndProcess();
+    });
 
-    // Manual search
-    document.getElementById('manual-search-btn')?.addEventListener('click', () => this.showManualSearch());
-
-    // Confirmation modal
     document.getElementById('confirm-add').addEventListener('click', () => this.confirmAddBook());
     document.getElementById('confirm-cancel').addEventListener('click', () => this.hideModal());
+
+    // Photo upload from library
+    document.getElementById('photo-input')?.addEventListener('change', (e) => this.handlePhotoUpload(e));
+    document.getElementById('manual-search-btn')?.addEventListener('click', () => this.showManualSearch());
   }
 
-  // Views
   showView(viewId) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(viewId).classList.add('active');
@@ -64,7 +65,6 @@ class BookShelf {
     }
   }
 
-  // Library Rendering
   renderLibrary() {
     const grid = document.getElementById('book-grid');
     const empty = document.getElementById('empty-state');
@@ -94,7 +94,6 @@ class BookShelf {
     });
   }
 
-  // Book Detail
   showBookDetail(index) {
     this.currentBook = index;
     const book = this.books[index];
@@ -103,7 +102,7 @@ class BookShelf {
       <div class="detail-cover">
         ${book.cover 
           ? `<img src="${book.cover}" alt="${book.title}">` 
-          : `<div class="no-cover" style="height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-surface)">${book.title}</div>`
+          : `<div class="no-cover">${book.title}</div>`
         }
       </div>
       <h2 class="detail-title">${book.title}</h2>
@@ -128,9 +127,7 @@ class BookShelf {
         </div>
       </div>
       
-      ${book.description ? `
-        <p class="detail-description">${book.description}</p>
-      ` : ''}
+      ${book.description ? `<p class="detail-description">${book.description}</p>` : ''}
     `;
     
     this.showView('detail-view');
@@ -146,29 +143,23 @@ class BookShelf {
     this.showView('library-view');
   }
 
-  // Timeline
   renderTimeline() {
     const container = document.getElementById('timeline-container');
     
     if (this.books.length === 0) {
-      container.innerHTML = '<div class="empty-state"><p>No books in your timeline yet</p></div>';
+      container.innerHTML = '<div class="empty-state"><p>No books yet</p></div>';
       return;
     }
 
-    // Group by month
     const grouped = {};
-    const sortedBooks = [...this.books].sort((a, b) => 
-      new Date(b.addedAt) - new Date(a.addedAt)
-    );
+    const sortedBooks = [...this.books].sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
 
-    sortedBooks.forEach((book, i) => {
+    sortedBooks.forEach(book => {
       const date = new Date(book.addedAt);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       
-      if (!grouped[key]) {
-        grouped[key] = { label, books: [] };
-      }
+      if (!grouped[key]) grouped[key] = { label, books: [] };
       grouped[key].books.push({ ...book, originalIndex: this.books.indexOf(book) });
     });
 
@@ -180,15 +171,11 @@ class BookShelf {
             ${group.books.map(book => `
               <div class="timeline-book" data-index="${book.originalIndex}">
                 <div class="timeline-book-cover">
-                  ${book.cover 
-                    ? `<img src="${book.cover}" alt="${book.title}">` 
-                    : `<div class="no-cover" style="height:100%;background:var(--bg-surface);font-size:8px;display:flex;align-items:center;justify-content:center;padding:4px;text-align:center">${book.title}</div>`
-                  }
+                  ${book.cover ? `<img src="${book.cover}" alt="${book.title}">` : `<div class="no-cover">${book.title}</div>`}
                 </div>
                 <div class="timeline-book-info">
                   <div class="timeline-book-title">${book.title}</div>
                   <div class="timeline-book-author">${book.authors?.[0] || 'Unknown'}</div>
-                  <div class="timeline-book-date">${new Date(book.addedAt).toLocaleDateString()}</div>
                 </div>
               </div>
             `).join('')}
@@ -198,13 +185,10 @@ class BookShelf {
     `;
 
     container.querySelectorAll('.timeline-book').forEach(el => {
-      el.addEventListener('click', () => {
-        this.showBookDetail(parseInt(el.dataset.index));
-      });
+      el.addEventListener('click', () => this.showBookDetail(parseInt(el.dataset.index)));
     });
   }
 
-  // Scanner
   async openScanner() {
     this.showView('scanner-view');
     await this.startCamera();
@@ -212,20 +196,20 @@ class BookShelf {
 
   async startCamera() {
     try {
-      // Portrait orientation for books (height > width)
       this.stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment',
-          width: { ideal: 720 },
-          height: { ideal: 1280 },
-          aspectRatio: { ideal: 0.5625 } // 9:16 portrait
+          width: { ideal: 1080 },
+          height: { ideal: 1920 }
         }
       });
-      document.getElementById('camera').srcObject = this.stream;
-      document.getElementById('scan-status').textContent = 'Point at book cover';
+      const video = document.getElementById('camera');
+      video.srcObject = this.stream;
+      await video.play();
+      document.getElementById('scan-status').textContent = 'Tap button to capture';
     } catch (e) {
       console.error('Camera error:', e);
-      alert('Could not access camera. Please grant camera permission.');
+      alert('Camera access denied. Please enable camera permissions.');
       this.closeScanner();
     }
   }
@@ -247,29 +231,36 @@ class BookShelf {
     const canvas = document.getElementById('scan-canvas');
     const ctx = canvas.getContext('2d');
     
-    // Capture the frame
+    // Visual feedback - flash
+    const scanOverlay = document.querySelector('.scan-overlay');
+    scanOverlay.style.background = 'rgba(255,255,255,0.8)';
+    setTimeout(() => scanOverlay.style.background = '', 150);
+    
+    // Haptic
+    if (navigator.vibrate) navigator.vibrate(50);
+    
+    // Capture full frame (we'll crop in the thumbnail)
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
     
-    // Save as thumbnail (compressed)
-    this.capturedImage = canvas.toDataURL('image/jpeg', 0.8);
+    // Stop camera immediately after capture
+    this.stopCamera();
     
-    // Haptic feedback
-    if (navigator.vibrate) navigator.vibrate(50);
+    // Save as thumbnail
+    this.capturedImage = canvas.toDataURL('image/jpeg', 0.85);
     
     document.getElementById('scan-status').textContent = 'Identifying book...';
     this.showLoading('Reading cover...');
     
     try {
       const bookInfo = await this.identifyBook();
+      console.log('Gemini result:', bookInfo);
       
-      if (bookInfo && bookInfo.title) {
-        // Got it! Search for full metadata
+      if (bookInfo && bookInfo.title && bookInfo.title !== 'Unknown') {
         document.getElementById('loading-text').textContent = 'Finding details...';
         await this.searchAndConfirm(bookInfo);
       } else {
-        // Couldn't identify - manual fallback
         this.hideLoading();
         this.showManualEntry();
       }
@@ -282,11 +273,15 @@ class BookShelf {
 
   async identifyBook() {
     const apiKey = this.getGeminiKey();
-    if (!apiKey) return null;
+    if (!apiKey) {
+      console.log('No API key');
+      return null;
+    }
 
     try {
       const base64Data = this.capturedImage.split(',')[1];
       
+      console.log('Calling Gemini...');
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
@@ -295,8 +290,15 @@ class BookShelf {
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: 'What book is this? Return ONLY valid JSON: {"title": "...", "author": "..."}. No markdown, no explanation.' },
-                { inline_data: { mime_type: 'image/jpeg', data: base64Data } }
+                { 
+                  text: 'Look at this book cover. What is the title and author? Return ONLY a JSON object like {"title": "Book Title", "author": "Author Name"}. No markdown, no explanation, just the JSON.' 
+                },
+                { 
+                  inline_data: { 
+                    mime_type: 'image/jpeg', 
+                    data: base64Data 
+                  } 
+                }
               ]
             }]
           })
@@ -304,10 +306,20 @@ class BookShelf {
       );
       
       const data = await response.json();
+      console.log('Gemini response:', data);
+      
+      if (data.error) {
+        console.error('Gemini API error:', data.error);
+        alert('Gemini API error: ' + data.error.message);
+        return null;
+      }
       
       if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
         const text = data.candidates[0].content.parts[0].text;
-        const jsonMatch = text.match(/\{[^}]+\}/s);
+        console.log('Gemini text:', text);
+        
+        // Try to parse JSON from response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           return JSON.parse(jsonMatch[0]);
         }
@@ -320,14 +332,14 @@ class BookShelf {
   }
 
   getGeminiKey() {
-    // Injected at build time from Vercel env var
+    // Check window first (injected by Vercel build)
     if (window.GEMINI_API_KEY) {
       return window.GEMINI_API_KEY;
     }
     // Fallback to localStorage
     let key = localStorage.getItem('shelfie_gemini_key');
     if (!key) {
-      key = prompt('Enter your Gemini API key (free at aistudio.google.com):');
+      key = prompt('Enter your Gemini API key:\n(Get one free at aistudio.google.com)');
       if (key) {
         localStorage.setItem('shelfie_gemini_key', key);
       }
@@ -350,64 +362,18 @@ class BookShelf {
         book = { title: bookInfo.title, authors: bookInfo.author ? [bookInfo.author] : [] };
       }
       
+      // Use our captured photo as cover
       book.cover = this.capturedImage;
       this.hideLoading();
       this.showConfirmation(book);
     } catch (e) {
       console.error('Search error:', e);
       this.hideLoading();
-      const book = {
+      this.showConfirmation({
         title: bookInfo.title,
         authors: bookInfo.author ? [bookInfo.author] : [],
         cover: this.capturedImage
-      };
-      this.showConfirmation(book);
-    }
-  }
-
-  async searchBookByText(text) {
-    // Clean up OCR text - get the most prominent lines (likely title/author)
-    const lines = text
-      .split('\n')
-      .map(l => l.trim())
-      .filter(line => line.length > 2 && !/^[\d\W]+$/.test(line));
-    
-    // Take first few meaningful lines as search query
-    const searchQuery = lines.slice(0, 4).join(' ')
-      .replace(/[^a-zA-Z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    console.log('Search query:', searchQuery);
-
-    if (!searchQuery || searchQuery.length < 3) {
-      this.hideLoading();
-      this.showManualEntry();
-      return;
-    }
-
-    document.getElementById('loading-text').textContent = 'Searching for book...';
-
-    try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=5`
-      );
-      const data = await response.json();
-
-      if (data.items && data.items.length > 0) {
-        // Show best match, use our captured image as cover
-        const book = this.parseGoogleBook(data.items[0]);
-        book.cover = this.capturedImage; // Use photo as thumbnail!
-        this.hideLoading();
-        this.showConfirmation(book);
-      } else {
-        this.hideLoading();
-        this.showManualEntry();
-      }
-    } catch (e) {
-      console.error('Search error:', e);
-      this.hideLoading();
-      this.showManualEntry();
+      });
     }
   }
 
@@ -424,94 +390,61 @@ class BookShelf {
   }
 
   showManualEntry() {
-    // Fallback - add book with just the photo
-    const book = {
+    this.showConfirmation({
       title: 'Unknown Book',
       authors: [],
       cover: this.capturedImage
-    };
-    this.showConfirmation(book, true);
+    }, true);
   }
 
-  showManualSearch() {
-    const title = prompt('Enter book title:');
-    if (!title) return;
-    
-    this.showLoading('Searching...');
-    this.searchBookByTitle(title);
-  }
-
-  async searchBookByTitle(title) {
-    try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=5`
-      );
-      const data = await response.json();
-
-      if (data.items && data.items.length > 0) {
-        const book = this.parseGoogleBook(data.items[0]);
-        // Use Google's cover since we didn't take a photo
-        const info = data.items[0].volumeInfo;
-        book.cover = info.imageLinks?.thumbnail?.replace('http:', 'https:') || 
-                     info.imageLinks?.smallThumbnail?.replace('http:', 'https:') || null;
-        this.hideLoading();
-        this.showConfirmation(book, false);
-      } else {
-        this.hideLoading();
-        alert('No book found. Try a different title.');
-      }
-    } catch (e) {
-      console.error('Search error:', e);
-      this.hideLoading();
-      alert('Search failed. Check your connection.');
-    }
-  }
-
-  // Confirmation
   showConfirmation(book, editable = false) {
     this.pendingBook = book;
     
     document.getElementById('confirm-book-info').innerHTML = `
-      <img src="${book.cover || ''}" alt="Cover">
+      <img src="${book.cover || ''}" alt="Cover" style="max-height: 200px; border-radius: 8px;">
       ${editable ? `
-        <input type="text" id="edit-title" value="${book.title}" placeholder="Book title">
-        <input type="text" id="edit-author" value="${book.authors?.join(', ') || ''}" placeholder="Author">
+        <input type="text" id="edit-title" value="${book.title === 'Unknown Book' ? '' : book.title}" placeholder="Enter book title..." style="font-size: 18px; padding: 12px; margin-top: 16px; width: 100%; border: 2px solid var(--accent); border-radius: 8px; background: var(--bg-surface); color: var(--text);">
+        <input type="text" id="edit-author" value="${book.authors?.join(', ') || ''}" placeholder="Enter author..." style="font-size: 16px; padding: 10px; margin-top: 8px; width: 100%; border: 1px solid var(--bg-surface); border-radius: 8px; background: var(--bg-card); color: var(--text-muted);">
       ` : `
-        <h3>${book.title}</h3>
-        <p>${book.authors?.join(', ') || 'Unknown Author'}</p>
+        <h3 style="margin-top: 16px;">${book.title}</h3>
+        <p style="color: var(--text-muted);">${book.authors?.join(', ') || 'Unknown Author'}</p>
       `}
     `;
     
     document.getElementById('confirm-modal').classList.add('active');
+    
+    // Focus title input if editable
+    if (editable) {
+      setTimeout(() => document.getElementById('edit-title')?.focus(), 100);
+    }
   }
 
   hideModal() {
     document.getElementById('confirm-modal').classList.remove('active');
     this.pendingBook = null;
     this.capturedImage = null;
-    this.searchResults = null;
-    // Go back to scanner or library
-    if (this.stream) {
-      document.getElementById('scan-status').textContent = 'Point at book cover';
-    }
   }
 
   confirmAddBook() {
-    // If no book selected yet, use the typed title
-    if (!this.pendingBook) {
-      const titleInput = document.getElementById('quick-title');
-      const title = titleInput?.value?.trim();
-      
+    if (!this.pendingBook) return;
+    
+    // Check for edited values
+    const titleInput = document.getElementById('edit-title');
+    const authorInput = document.getElementById('edit-author');
+    
+    if (titleInput) {
+      const title = titleInput.value.trim();
       if (!title) {
-        alert('Please enter a book title or select from search results');
+        alert('Please enter a book title');
+        titleInput.focus();
         return;
       }
-      
-      this.pendingBook = {
-        title: title,
-        authors: [],
-        cover: this.capturedImage
-      };
+      this.pendingBook.title = title;
+    }
+    
+    if (authorInput) {
+      const author = authorInput.value.trim();
+      this.pendingBook.authors = author ? [author] : [];
     }
     
     this.pendingBook.addedAt = new Date().toISOString();
@@ -524,14 +457,90 @@ class BookShelf {
     document.getElementById('confirm-modal').classList.remove('active');
     this.pendingBook = null;
     this.capturedImage = null;
-    this.searchResults = null;
     this.showView('library-view');
     
-    // Celebration feedback
     if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
   }
 
-  // Loading
+
+
+  showManualSearch() {
+    const title = prompt('Enter book title:');
+    if (!title || !title.trim()) return;
+    
+    this.showLoading('Searching...');
+    this.searchBookByTitle(title.trim());
+  }
+
+  async searchBookByTitle(title) {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=1`
+      );
+      const data = await response.json();
+
+      if (data.items && data.items.length > 0) {
+        const book = this.parseGoogleBook(data.items[0]);
+        const info = data.items[0].volumeInfo;
+        book.cover = info.imageLinks?.thumbnail?.replace('http:', 'https:') || null;
+        this.hideLoading();
+        this.closeScanner();
+        this.showConfirmation(book, false);
+      } else {
+        this.hideLoading();
+        alert('No book found. Try a different title.');
+      }
+    } catch (e) {
+      console.error('Search error:', e);
+      this.hideLoading();
+      alert('Search failed. Check your connection.');
+    }
+  }
+  async handlePhotoUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Close camera if open
+    this.stopCamera();
+    
+    this.showLoading('Processing photo...');
+    
+    try {
+      // Read the file as base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        this.capturedImage = e.target.result;
+        
+        // Now identify the book
+        document.getElementById('loading-text').textContent = 'Identifying book...';
+        
+        try {
+          const bookInfo = await this.identifyBook();
+          console.log('Gemini result:', bookInfo);
+          
+          if (bookInfo && bookInfo.title && bookInfo.title !== 'Unknown') {
+            document.getElementById('loading-text').textContent = 'Finding details...';
+            await this.searchAndConfirm(bookInfo);
+          } else {
+            this.hideLoading();
+            this.showManualEntry();
+          }
+        } catch (err) {
+          console.error('Identification error:', err);
+          this.hideLoading();
+          this.showManualEntry();
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (e) {
+      console.error('Photo upload error:', e);
+      this.hideLoading();
+      alert('Failed to process photo');
+    }
+    
+    // Reset input so same file can be selected again
+    event.target.value = '';
+  }
   showLoading(text = 'Loading...') {
     document.getElementById('loading-text').textContent = text;
     document.getElementById('loading').classList.add('active');
@@ -541,18 +550,14 @@ class BookShelf {
     document.getElementById('loading').classList.remove('active');
   }
 
-  // Service Worker & Install
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
         await navigator.serviceWorker.register('sw.js');
-        console.log('Service Worker registered');
       } catch (e) {
-        console.error('SW registration failed:', e);
+        console.error('SW failed:', e);
       }
     }
-    
-    // Install prompt
     this.setupInstallPrompt();
   }
 
@@ -562,49 +567,31 @@ class BookShelf {
     const installBtn = document.getElementById('install-btn');
     const dismissBtn = document.getElementById('install-dismiss');
 
-    // Check if already installed or dismissed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      return; // Already installed
-    }
-    if (localStorage.getItem('shelfie_install_dismissed')) {
-      return;
-    }
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+    if (localStorage.getItem('shelfie_install_dismissed')) return;
 
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      installPrompt.classList.remove('hidden');
+      installPrompt?.classList.remove('hidden');
     });
 
     installBtn?.addEventListener('click', async () => {
       if (!deferredPrompt) {
-        // Show manual instructions for iOS
-        alert('To install:\n\n1. Tap the Share button\n2. Tap "Add to Home Screen"');
+        alert('To install:\n\n1. Tap Share button\n2. Tap "Add to Home Screen"');
         return;
       }
       deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        installPrompt.classList.add('hidden');
-      }
+      await deferredPrompt.userChoice;
       deferredPrompt = null;
+      installPrompt?.classList.add('hidden');
     });
 
     dismissBtn?.addEventListener('click', () => {
-      installPrompt.classList.add('hidden');
+      installPrompt?.classList.add('hidden');
       localStorage.setItem('shelfie_install_dismissed', 'true');
     });
-
-    // Show prompt after a delay if on mobile and not installed
-    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      setTimeout(() => {
-        if (!window.matchMedia('(display-mode: standalone)').matches) {
-          installPrompt.classList.remove('hidden');
-        }
-      }, 3000);
-    }
   }
 }
 
-// Initialize app
 const app = new BookShelf();
