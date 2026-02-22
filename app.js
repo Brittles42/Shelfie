@@ -320,7 +320,11 @@ class BookShelf {
   }
 
   getGeminiKey() {
-    // Stored in localStorage after first entry
+    // Injected at build time from Vercel env var
+    if (window.GEMINI_API_KEY) {
+      return window.GEMINI_API_KEY;
+    }
+    // Fallback to localStorage
     let key = localStorage.getItem('shelfie_gemini_key');
     if (!key) {
       key = prompt('Enter your Gemini API key (free at aistudio.google.com):');
