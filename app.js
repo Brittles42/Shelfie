@@ -320,6 +320,7 @@ class BookShelf {
   }
 
   getGeminiKey() {
+    // Stored in localStorage after first entry
     let key = localStorage.getItem('shelfie_gemini_key');
     if (!key) {
       key = prompt('Enter your Gemini API key (free at aistudio.google.com):');
