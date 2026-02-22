@@ -46,6 +46,9 @@ class BookShelf {
     // Capture on tap
     document.getElementById('scanner-container').addEventListener('click', () => this.captureAndProcess());
 
+    // Manual search
+    document.getElementById('manual-search-btn')?.addEventListener('click', () => this.showManualSearch());
+
     // Confirmation modal
     document.getElementById('confirm-add').addEventListener('click', () => this.confirmAddBook());
     document.getElementById('confirm-cancel').addEventListener('click', () => this.hideModal());
@@ -209,8 +212,14 @@ class BookShelf {
 
   async startCamera() {
     try {
+      // Portrait orientation for books (height > width)
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 720 },
+          height: { ideal: 1280 },
+          aspectRatio: { ideal: 0.5625 } // 9:16 portrait
+        }
       });
       document.getElementById('camera').srcObject = this.stream;
       document.getElementById('scan-status').textContent = 'Point at book cover';
@@ -344,6 +353,40 @@ class BookShelf {
     this.showConfirmation(book, true);
   }
 
+  showManualSearch() {
+    const title = prompt('Enter book title:');
+    if (!title) return;
+    
+    this.showLoading('Searching...');
+    this.searchBookByTitle(title);
+  }
+
+  async searchBookByTitle(title) {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=5`
+      );
+      const data = await response.json();
+
+      if (data.items && data.items.length > 0) {
+        const book = this.parseGoogleBook(data.items[0]);
+        // Use Google's cover since we didn't take a photo
+        const info = data.items[0].volumeInfo;
+        book.cover = info.imageLinks?.thumbnail?.replace('http:', 'https:') || 
+                     info.imageLinks?.smallThumbnail?.replace('http:', 'https:') || null;
+        this.hideLoading();
+        this.showConfirmation(book, false);
+      } else {
+        this.hideLoading();
+        alert('No book found. Try a different title.');
+      }
+    } catch (e) {
+      console.error('Search error:', e);
+      this.hideLoading();
+      alert('Search failed. Check your connection.');
+    }
+  }
+
   // Confirmation
   showConfirmation(book, editable = false) {
     this.pendingBook = book;
@@ -408,7 +451,7 @@ class BookShelf {
     document.getElementById('loading').classList.remove('active');
   }
 
-  // Service Worker
+  // Service Worker & Install
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
@@ -417,6 +460,58 @@ class BookShelf {
       } catch (e) {
         console.error('SW registration failed:', e);
       }
+    }
+    
+    // Install prompt
+    this.setupInstallPrompt();
+  }
+
+  setupInstallPrompt() {
+    let deferredPrompt;
+    const installPrompt = document.getElementById('install-prompt');
+    const installBtn = document.getElementById('install-btn');
+    const dismissBtn = document.getElementById('install-dismiss');
+
+    // Check if already installed or dismissed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      return; // Already installed
+    }
+    if (localStorage.getItem('shelfie_install_dismissed')) {
+      return;
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installPrompt.classList.remove('hidden');
+    });
+
+    installBtn?.addEventListener('click', async () => {
+      if (!deferredPrompt) {
+        // Show manual instructions for iOS
+        alert('To install:\n\n1. Tap the Share button\n2. Tap "Add to Home Screen"');
+        return;
+      }
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        installPrompt.classList.add('hidden');
+      }
+      deferredPrompt = null;
+    });
+
+    dismissBtn?.addEventListener('click', () => {
+      installPrompt.classList.add('hidden');
+      localStorage.setItem('shelfie_install_dismissed', 'true');
+    });
+
+    // Show prompt after a delay if on mobile and not installed
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      setTimeout(() => {
+        if (!window.matchMedia('(display-mode: standalone)').matches) {
+          installPrompt.classList.remove('hidden');
+        }
+      }, 3000);
     }
   }
 }
